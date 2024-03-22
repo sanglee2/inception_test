@@ -1,0 +1,90 @@
+
+# 도커 컴포즈 버전.
+version: "3" 
+
+# docker compose에서 관리하고 싶은 컨테이너의 서비스.
+# 컨테이너의 바탕이 되는 base image가 필요할 때만 imgae: 사용.
+# 그럼 dockerfile에서 안 쓰고, docker-compose.yml 에서만 image: 섹션 이용하면 될까? / 도커파일 - 컴포즈구성파일 관계의 역할 배분.
+# build , image 같이 쓸 수 있는가?! - 같이 쓸 수 있음.
+services:
+  # mariadb 서비스 관련
+  mariadb:
+  # 이미지 작성 -> 도커파일에 기술, 그걸 빌드해서 베이스 이미지로 지정할 떄.
+    build: ./requirement/mariadb
+    image: mariadb:sanglee2_incpetion # 도커파일에서 빌드된 이미지 태그 용도로 사용.
+    container_name: mariadb # 생성할 컨테이너 이름 - 서비스 이름과 같게?! 고유해야 한다.
+    env_file: .env # 환경변수 -> 파일로 읽어들이기. 다른 파일에서 환경변수를 정의하고, 그 파일 읽어드리기. # environment로 쓸 환경변수가 가져오는 것보다 효율적?
+    # restart: always # 재시작 허용
+    networks: # 각각의 컨테이너에도 네트워크 표시.
+      - inception_network
+    volumes: # 컨테이너에 볼륨 마운트 하는 섹션.
+      - wordpress_database:/var/lib/mysql # 앞 - [호스트 경로] : [마이라디비 내 디렉터리] 호스트 측에서 mount할 경로 지정 - mariadb의 /var/lib/mysql
+    ports: 
+      - "3306:3306"
+    # healthcheck:
+    #   interval: 30s
+    #   retries: 3
+    #   # mariadb 로그인 하기.
+    #   test:
+    #     [
+    #       "CMD",
+    #       "healthcheck.sh",
+    #       "--su-mysql",
+    #       "--connect",
+    #       "--innodb_initialized"
+    #     ]
+    #   timeout: 30s
+
+  # port 노출은 필요없나 , 있냐의 문제! - compose 구성파일에서.. 3306
+  wordpress:
+    build: ./requirement/wordpress  
+    image: wordpress:sanglee2_inception # 이미지 이름
+    container_name: wordpress # 컨테이너 이름
+    env_file: .env
+    # restart: always # 재시작 허용
+    networks: # 각각의 컨테이너에도 네트워크 표시.
+      - inception_network
+
+    volumes: # 볼륨 설정
+      - wordpress_web_file:/var/www/html/wordpress # 앞 - 외부 볼륨 ->wordpress 컨테이너에. 이 설정된 워드프레스의 설치 루트 디렉터리 괜찮은가?
+    depends_on:
+      - mariadb
+        # condition: service_healthy 
+    ports:
+      - "9000:9000"
+
+  nginx:
+    build: ./requirement/nginx
+    image: nginx:sanglee2_inception # 이미지 이름
+    container_name: nginx # 컨테이너 이름
+    env_file: .env
+    # restart: always # 재시작 허용
+    networks: # 각각의 컨테이너에도 네트워크 표시(?!)
+      - inception_network
+    volumes: # 볼륨 설정
+      - wordpress_web_file:/var/www/html/wordpress # 볼륨 마운트
+    depends_on:
+      - wordpress
+    ports:
+      - "443:443"
+
+# volumes
+volumes: # 재사용 가능한 볼륨 정의
+  wordpress_database: # 'mariadb_data 볼륨 정의'
+    driver: local # 볼륨의 드라이버를 'local'로 설정합니다. 이는 로컬 파일 시스템에 볼륨을 저장합니다.
+    driver_opts: # 드라이버 추가옵션 정의
+      type: none # 
+      o: bind # 'o' (options) 옵션을 'bind'로 설정합니다. 이는 호스트 시스템의 특정 디렉토리를 컨테이너에 바인드 마운트합니다.
+      device: /home/sangminlee/data/wordpress_database # 호스트 시스템에서의 폴더 경로 지정. 바인드마운트 하기위한?
+  wordpress_web_file: # 'wordpress_data' 볼륨 정의
+    driver: local # 볼륨의 드라이버를 'local'로 설정합니다. 이는 로컬 파일 시스템에 볼륨을 저장합니다.
+    driver_opts: # 드라이버 추가옵션 정의
+      type: none # 
+      o: bind # 'o' (options) 옵션을 'bind'로 설정합니다. 이는 호스트 시스템의 특정 디렉토리를 컨테이너에 바인드 마운트합니다.
+      device: /home/sangminlee/data/wordpress_web_file # 환경변수로 volume path 바꾸냐 마냐. -> make하고 나서 볼륨. 마운트 (생성)되었는지 확인. 확인!
+
+#networs wordpress - mariadb container 소통.
+networks:
+  inception_network:  # 네트워크 이름 설정.
+    driver: bridge  # 소통이 가능한 네트워크 드라이버로 bridge 이용.
+
